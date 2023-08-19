@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, provider, signInWithPopup } from './firebase';
+import { auth, provider, signInWithPopup, firestore } from './firebase'; // Asegúrate de importar firestore
 import Typist from 'react-typist';
 import './Home.css';
-import { Button } from 'antd';
+import { collection, setDoc, doc } from "firebase/firestore";
 
 function Home() {
   const navigate = useNavigate();
@@ -21,12 +21,25 @@ function Home() {
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user) {
+        const userRef = doc(firestore, 'users', result.user.uid); 
+        
+        // Usamos setDoc directamente sin verificar si el documento existe.
+        // Si el documento ya existe, simplemente se sobrescribirá con la misma información.
+        await setDoc(userRef, {
+          email: result.user.email,
+          role: 'user'
+        }, { merge: true }); // La opción merge asegura que sólo se actualicen los campos proporcionados sin eliminar otros campos existentes.
+
+        console.log("Usuario añadido o actualizado con éxito en la colección users!");
         navigate('/dashboard');
       }
     } catch (error) {
-      console.error("Error al iniciar sesión:", error);
+      console.error("Error al iniciar sesión o crear el usuario:", error);
     }
-  };
+};
+
+
+
 
   return (
     <div className="container">
