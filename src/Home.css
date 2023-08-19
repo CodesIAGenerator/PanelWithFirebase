@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap');
+
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.container {
+  display: flex;
+  flex-direction: column; /* Por defecto, apila los elementos verticalmente */
+  align-items: stretch;
+  height: 100vh;
+  width: 100%;
+}
+
+.googleButtonContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Centra el botón en dispositivos móviles */
+  padding: 20px;
+}
+
+.googleLoginButton {
+  background-color: #ffffff;
+  color: black;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: background-color 0.3s;
+}
+
+.googleLoginButton:hover {
+  background-color: #000000;
+  color: white;
+}
+
+.googleLoginButton img {
+  width: 20px;
+  height: 20px;
+  margin-right: 10px;
+}
+
+.separator {
+  height: 1px; /* Cambia a 1px en dispositivos móviles */
+  width: 100%;
+  background-color: #E0E0E0;
+  margin: 0;
+}
+
+.gradientContainer {
+  flex: 1;
+  background: linear-gradient(90deg, rgba(62, 149, 205, 1) 0%, rgba(72, 85, 99, 1) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  margin: 0;
+  color: white;
+  font-size: 16.5px;
+  font-style: italic;
+  font-family: 'Lato', sans-serif;
+}
+
+.dashboardButton {
+  background-color: #4CAF50;
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1), 0 6px 20px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.3s ease;
+}
+
+.dashboardButton:hover {
+  background-color: #45a049;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Estilos para pantallas más grandes (tablets y desktops) */
+@media (min-width: 769px) {
+  .container {
+    flex-direction: row; /* En pantallas más grandes, muestra los elementos uno al lado del otro */
+  }
+
+  .googleButtonContainer {
+    justify-content: flex-end; /* Alinea el botón hacia el final del contenedor en pantallas más grandes */
+  }
+
+  .separator {
+    height: 100vh;
+    width: 1px;
+  }
+}
