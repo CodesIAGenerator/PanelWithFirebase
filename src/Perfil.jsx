@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Upload, Avatar } from 'antd';
-import { auth, firestore, storage } from './firebase';
+import { Card, Form, Input, Button, message, Switch, Avatar, Modal } from 'antd';
+import { auth, firestore } from './firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import speakeasy from 'speakeasy';
+import QRCode from 'qrcode.react';
+import { Buffer } from 'buffer';
+import base32Decode from 'base32-decode';
 
+global.Buffer = Buffer;
 
 function Perfil() {
   const [userData, setUserData] = useState({});
-  const [userPhotoURL, setUserPhotoURL] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
+  const [secret, setSecret] = useState(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [token, setToken] = useState("");
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -16,35 +23,13 @@ function Perfil() {
       const docSnapshot = await getDoc(userRef);
       if (docSnapshot.exists()) {
         setUserData(docSnapshot.data());
-        setUserPhotoURL(docSnapshot.data().photoURL || null);
+        setTwoFAEnabled(docSnapshot.data().twoFAEnabled || false);
+        setSecret(docSnapshot.data().secret || null);
       }
     };
 
     fetchUserData();
   }, []);
-
-  
-
-  const handleUpload = async (file) => {
-    console.log(file.file)
-    const storageRef = ref(storage, `profilePictures/${auth.currentUser.uid}/${Date.now()}-${file.file.name}`);
-    try {
-      await uploadBytes(storageRef, file.file); // Aquí también cambiamos file por file.file
-      const downloadURL = await getDownloadURL(storageRef);
-      const userRef = doc(firestore, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, { photoURL: downloadURL });
-      setUserPhotoURL(downloadURL);
-      message.success('Imagen actualizada con éxito!');
-    } catch (error) {
-      console.error("Error al subir la imagen:", error);
-      message.error('Error al subir imagen.');
-    }
-    return false; // Esto es para evitar que el componente Upload envíe el archivo automáticamente después de seleccionarlo
-  };
-  
-  
-  
-  
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -62,35 +47,67 @@ function Perfil() {
     }
   };
 
+  const handle2FAToggle = async (checked) => {
+    if (checked) {
+      const newSecret = speakeasy.generateSecret({ name: 'TuApp' });
+      setSecret(newSecret.base32);
+      setIsModalVisible(true);
+    } else {
+      setSecret(null);
+      const userRef = doc(firestore, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, { secret: null });
+      message.success('Verificación de dos pasos desactivada.');
+      setTwoFAEnabled(false);
+    }
+  };
+
+  const handleOk = () => {
+    const decodedSecret = base32Decode(secret, 'RFC4648').toString('ascii');
+
+    const isValid = speakeasy.totp.verify({
+        secret: decodedSecret,
+        encoding: 'ascii',
+        token: token
+    });
+
+    const expectedToken = speakeasy.totp({
+        secret: decodedSecret,
+        encoding: 'ascii'
+    });
+
+    console.log("Token ingresado:", token);
+    console.log("Token esperado:", expectedToken);
+
+    if (isValid) {
+        message.success('Verificación exitosa!');
+        setIsModalVisible(false);
+        setTwoFAEnabled(true);
+    } else {
+        message.error('El código de verificación es incorrecto. Inténtalo de nuevo.');
+    }
+};
+
+
+
+
+
+  const handleCancel = () => {
+    setIsModalVisible(false);
+  };
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
       <Card title="Perfil de Usuario" style={{ width: 400 }}>
-        <Avatar src={userPhotoURL} size={64} style={{ display: 'block', margin: '0 auto 20px auto' }} />
-        <Upload
-          showUploadList={false}
-          customRequest={handleUpload}
-          beforeUpload={(file) => {
-            const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png';
-            if (!isJpgOrPng) {
-              message.error('Solo puedes subir archivos JPG/PNG!');
-            }
-            return isJpgOrPng;
-          }}
-        >
-          <Button style={{ display: 'block', margin: '0 auto 20px auto' }}>Cambiar foto de perfil</Button>
-        </Upload>
         {isEditing ? (
-          <Form initialValues={userData} onFinish={handleSave}>
-            <Form.Item label="Nombre" name="name">
+          <Form onFinish={handleSave} initialValues={userData}>
+            <Form.Item name="name" label="Nombre">
               <Input />
             </Form.Item>
-            <Form.Item label="Email" name="email">
+            <Form.Item name="email" label="Email">
               <Input />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Guardar
-              </Button>
+              <Button type="primary" htmlType="submit">Guardar</Button>
             </Form.Item>
           </Form>
         ) : (
@@ -99,6 +116,22 @@ function Perfil() {
             <p><strong>Email:</strong> {userData.email}</p>
             <Button onClick={handleEdit}>Editar</Button>
           </>
+        )}
+        <br />
+        <br />
+        <p>Verificación de dos pasos:</p>
+        <Switch checked={twoFAEnabled} onChange={handle2FAToggle} />
+        {secret && (
+          <Modal
+            title="Verificación de dos pasos"
+            visible={isModalVisible}
+            onOk={handleOk}
+            onCancel={handleCancel}
+          >
+            <QRCode value={speakeasy.otpauthURL({ secret: secret, label: 'TuApp', issuer: 'TuApp' })} />
+            <p>Escanea el código QR con tu aplicación de autenticación y luego ingresa el código generado a continuación:</p>
+            <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Ingresa el código" />
+          </Modal>
         )}
       </Card>
     </div>
