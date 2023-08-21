@@ -4,7 +4,7 @@ import { auth, signOut, firestore } from './firebase'; // Asegúrate de importar
 import Perfil from './Perfil';
 import './Dashboard.css';
 import Usuarios from './Usuarios';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { MenuItem } from '@mui/material';
 const { Header, Content, Footer, Sider } = Layout;
 
@@ -15,35 +15,46 @@ function Dashboard() {
   const [userRole, setUserRole] = useState(null);
   const [userPhotoURL, setUserPhotoURL] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [isTwoFACompleted, setIsTwoFACompleted] = useState(localStorage.getItem('twoFACompleted') === 'true');
+
 
   const handleAvatarClick = () => {
     setShowProfile(true);
     setSelectedMenu('3');
 };
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async user => {
-      if (user) {
-        setUserPhoto(user.photoURL);
-
-        // Obtener el rol del usuario desde Firestore
-        const userRef = doc(firestore, 'users', user.uid);
-        const docSnapshot = await getDoc(userRef);
-        if (docSnapshot.exists()) {
-          const userData = docSnapshot.data();
-          setUserRole(userData.role);  // <-- Establece el rol aquí
-        } else {
-          await setDoc(userRef, {
-            email: user.email,
-            role: 'user'
-          }, {merge: true});
-          setUserRole('user');  // <-- Establece el rol por defecto aquí
-        }
+useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged(async user => {
+    if (user) {
+      setUserPhoto(user.photoURL);
+      const userRef = doc(firestore, 'users', user.uid);
+      const docSnapshot = await getDoc(userRef);
+      if (docSnapshot.exists()) {
+        const userData = docSnapshot.data();
+        setUserRole(userData.role);
+      } else {
+        await setDoc(userRef, {
+          email: user.email,
+          role: 'user'
+        }, {merge: true});
+        setUserRole('user');
       }
-    });
+      const fetchUserData = async () => {
+          const userRef = doc(firestore, 'users', auth.currentUser.uid);
+          const docSnapshot = await getDoc(userRef);
+          if (docSnapshot.exists()) {
+              const data = docSnapshot.data();
+              setUserPhotoURL(data.photoURL || null);
+          }
+      };
+      fetchUserData();
+    }
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -68,10 +79,15 @@ function Dashboard() {
 }, []);
 
 
-
-  const handleLogout = () => {
-    signOut(auth);
-  };
+const handleLogout = async () => {
+  const userId = auth.currentUser?.uid;
+  if (userId) {
+    await auth.signOut();
+    const userRef = doc(firestore, 'users', userId);
+    await updateDoc(userRef, { twoFAVerified: false });
+    localStorage.setItem('twoFACompleted', 'false');
+  }
+};
 
 
   const renderContent = () => {
