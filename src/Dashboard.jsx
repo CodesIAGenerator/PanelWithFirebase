@@ -107,7 +107,6 @@ const handleLogout = async () => {
 };
 
 
-  console.log(userRole);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
