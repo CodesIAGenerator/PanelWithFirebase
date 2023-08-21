@@ -17,19 +17,22 @@ function Home() {
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const [userId, setUserId] = useState(null);
   const { isTwoFACompleted, completeTwoFA, resetTwoFA } = useAuth();
+  const [isButtonDashbordDisabled, setIsButtonDashbordDisabled] = useState(false);
 
-  useEffect(() => {
+useEffect(() => {
     if (isAuthenticated && !isTwoFACompleted) {
       setIsModalVisible(true);
     }
 }, [isAuthenticated, isTwoFACompleted]);
 
 
-  useEffect(() => {
-    setIsButtonDisabled(!userToken); // El botón estará desactivado si userToken está vacío
-  }, [userToken]);
+useEffect(() => {
+  setIsButtonDisabled(!userToken); // El botón estará desactivado si userToken está vacío
+}, [userToken]);
 
-  const getUserSecret = async (userId) => {
+
+
+const getUserSecret = async (userId) => {
     try {
         const userRef = doc(firestore, 'users', userId);
         const docSnapshot = await getDoc(userRef);
@@ -39,7 +42,8 @@ function Home() {
             
             // Comprobar el valor de twoFAVerified
             if (docSnapshot.data().twoFAVerified) {
-                completeTwoFA(); // Marcar la verificación de dos pasos como completada
+                completeTwoFA();
+                setIsModalVisible(false);
             }
         } else {
             console.log("No se encontró el documento del usuario.");
@@ -49,8 +53,6 @@ function Home() {
     }
 }
 
-
-  
 
 useEffect(() => {
   const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -67,7 +69,7 @@ useEffect(() => {
 }, [isTwoFACompleted]);
 
 
-  const handleGoogleLogin = async () => {
+const handleGoogleLogin = async () => {
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user) {
@@ -91,8 +93,21 @@ useEffect(() => {
     } catch (error) {
       console.error('Error al iniciar sesión o crear el usuario:', error);
     }
-  };
-  
+};
+
+
+
+const enableButtonDashboard = async (userId) => {
+  const userRef = doc(firestore, 'users', userId);
+  const docSnapshop = await getDoc(userRef);
+
+  if (docSnapshop.data().twoFAVerified) {
+    setIsButtonDashbordDisabled(false);
+  } else {
+    setIsButtonDashbordDisabled(true);
+    message.info('Debes pasar la verificación de dos pasos ');
+  }
+}
 
 
 const handleVerifyToken = async () => {
@@ -116,6 +131,8 @@ const handleVerifyToken = async () => {
     await updateDoc(userRef, { twoFAVerified: true });
 
     navigate('/dashboard');
+} else {
+  message.error("Error al introducir el codigo de dos pasos.");
 }
 
 
@@ -123,20 +140,21 @@ const handleVerifyToken = async () => {
 };
 
 
+
+useEffect(() => {
+  if (userId) {
+    enableButtonDashboard(userId);
+  }
+}, [userId])
+
 return (
     <div className="container">
       <div className="googleButtonContainer">
         {isAuthenticated ? (
           <button
           className="dashboardButton"
-          onClick={() => {
-              if (isTwoFACompleted) {
-                  navigate('/dashboard');
-              } else {
-                  setIsModalVisible(true); // Muestra el modal si no ha completado la verificación de dos pasos
-              }
-          }}
-          disabled={isButtonDisabled}
+          disabled={isButtonDashbordDisabled}
+          onClick={() => navigate('/dashboard')}
       >
           Ir a Dashboard
       </button>
