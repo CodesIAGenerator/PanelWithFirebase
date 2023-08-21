@@ -13,7 +13,9 @@ function Perfil() {
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [secret, setSecret] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [backupModalVisible, setBackupModalVisible] = useState(false);
   const [token, setToken] = useState("");
+  const [backupCodes, setBackupCodes] = useState([]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -22,14 +24,14 @@ function Perfil() {
       if (docSnapshot.exists()) {
         const userData = docSnapshot.data();
         setUserData(userData);
-        setTwoFAEnabled(userData.twoFAEnabled || false); // Actualizar el estado basado en los datos
+        setTwoFAEnabled(userData.twoFAEnabled || false);
         setSecret(userData.secret || null);
+        setBackupCodes(userData.backupCodes || []);
       }
     };
   
     fetchUserData();
   }, []);
-  
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -47,32 +49,59 @@ function Perfil() {
     }
   };
 
+  const generateBackupCodes = (n = 5) => {
+    const codes = [];
+    for (let i = 0; i < n; i++) {
+      codes.push(Math.floor(10000000 + Math.random() * 90000000).toString());
+    }
+    return codes;
+  };
+
   const handle2FAToggle = async (checked) => {
     if (checked) {
       const newSecret = authenticator.generateSecret();
-      console.log(newSecret);
       setSecret(newSecret);
       setIsModalVisible(true);
-      // Actualizar el estado y la base de datos
-      setTwoFAEnabled(true);
-      const userRef = doc(firestore, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, { twoFAEnabled: true, secret: newSecret });
     } else {
       setSecret(null);
       const userRef = doc(firestore, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, { twoFAEnabled: false, secret: null });
+      await updateDoc(userRef, { twoFAEnabled: false, secret: null, backupCodes: [] });
       message.success('Verificación de dos pasos desactivada.');
       setTwoFAEnabled(false);
     }
   };
 
-  const handleOk = () => {
+  const handleCopyToClipboard = () => {
+    const text = backupCodes.join('\n');
+    navigator.clipboard.writeText(text);
+    message.success('Códigos copiados al portapapeles!');
+  };
+
+  const handleDownload = () => {
+    const text = backupCodes.join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'backup-codes.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOk = async () => {
     const isValid = authenticator.verify({ token: token, secret: secret });
 
     if (isValid) {
       message.success('Verificación exitosa!');
       setIsModalVisible(false);
       setTwoFAEnabled(true);
+
+      const codes = generateBackupCodes();
+      setBackupCodes(codes);
+      const userRef = doc(firestore, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, { twoFAEnabled: true, secret: secret, backupCodes: codes, twoFAVerified: true });
+
+      setBackupModalVisible(true); // Mostrar modal de códigos de respaldo
     } else {
       message.error('El código de verificación es incorrecto. Inténtalo de nuevo.');
     }
@@ -118,6 +147,18 @@ function Perfil() {
             <QRCode value={authenticator.keyuri('TuApp', 'TuApp', secret)} />
             <p>Escanea el código QR con tu aplicación de autenticación y luego ingresa el código generado a continuación:</p>
             <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Ingresa el código" />
+          </Modal>
+        )}
+        {backupCodes.length > 0 && (
+          <Modal
+            title="Tus códigos de respaldo"
+            visible={backupModalVisible}
+            onOk={() => setBackupModalVisible(false)}
+            onCancel={() => setBackupModalVisible(false)}
+          >
+            <pre>{backupCodes.join('\n')}</pre>
+            <Button onClick={handleCopyToClipboard}>Copiar al portapapeles</Button>
+            <Button onClick={handleDownload}>Descargar</Button>
           </Modal>
         )}
       </Card>
