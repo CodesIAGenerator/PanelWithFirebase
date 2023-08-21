@@ -1,57 +1,153 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, provider, signInWithPopup, firestore } from './firebase'; // Asegúrate de importar firestore
+import { auth, provider, signInWithPopup, firestore } from './firebase';
+import { collection, setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { authenticator } from 'otplib';
+import { Button, Modal, Input, message } from 'antd';
 import Typist from 'react-typist';
 import './Home.css';
-import { collection, setDoc, doc } from "firebase/firestore";
+import { useAuth } from './auth-context';
 
 function Home() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [userToken, setUserToken] = useState('');
+  const [secret, setSecret] = useState('');
+  const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const { isTwoFACompleted, completeTwoFA, resetTwoFA } = useAuth();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(user => {
-      setIsAuthenticated(!!user);
-    });
+    if (isAuthenticated && !isTwoFACompleted) {
+      setIsModalVisible(true);
+    }
+}, [isAuthenticated, isTwoFACompleted]);
 
-    return () => unsubscribe();
-  }, []);
+
+  useEffect(() => {
+    setIsButtonDisabled(!userToken); // El botón estará desactivado si userToken está vacío
+  }, [userToken]);
+
+  const getUserSecret = async (userId) => {
+    try {
+        const userRef = doc(firestore, 'users', userId);
+        const docSnapshot = await getDoc(userRef);
+        if (docSnapshot.exists()) {
+            console.log("Secret del usuario:", docSnapshot.data().secret);
+            setSecret(docSnapshot.data().secret); // Almacenar en 'secret'
+            
+            // Comprobar el valor de twoFAVerified
+            if (docSnapshot.data().twoFAVerified) {
+                completeTwoFA(); // Marcar la verificación de dos pasos como completada
+            }
+        } else {
+            console.log("No se encontró el documento del usuario.");
+        }
+    } catch (error) {
+        console.error("Error al obtener el secreto del usuario:", error);
+    }
+}
+
+
+  
+
+useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged((user) => {
+    setIsAuthenticated(!!user);
+    if (user) {
+      setUserId(user.uid);
+      if (!isTwoFACompleted) {
+        getUserSecret(user.uid);
+      }
+    }
+  });
+
+  return () => unsubscribe();
+}, [isTwoFACompleted]);
+
 
   const handleGoogleLogin = async () => {
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user) {
-        const userRef = doc(firestore, 'users', result.user.uid); 
-        
-        // Usamos setDoc directamente sin verificar si el documento existe.
-        // Si el documento ya existe, simplemente se sobrescribirá con la misma información.
-        await setDoc(userRef, {
-          email: result.user.email,
-          role: 'user'
-        }, { merge: true }); // La opción merge asegura que sólo se actualicen los campos proporcionados sin eliminar otros campos existentes.
-
-        console.log("Usuario añadido o actualizado con éxito en la colección users!");
-        navigate('/dashboard');
+        const userRef = doc(firestore, 'users', result.user.uid);
+  
+        // Asegúrate de que el secreto se establezca aquí si es la primera vez que el usuario inicia sesión
+        await setDoc(
+          userRef,
+          {
+            email: result.user.email,
+            role: 'user',
+            // secret: 'TU_SECRETO_GENERADO'  // Descomenta y establece el secreto aquí si es necesario
+          },
+          { merge: true }
+        );
+  
+        setUserId(result.user.uid);
+        // Llama a getUserSecret después de crear/actualizar el documento del usuario
+        getUserSecret(result.user.uid);
       }
     } catch (error) {
-      console.error("Error al iniciar sesión o crear el usuario:", error);
+      console.error('Error al iniciar sesión o crear el usuario:', error);
     }
+  };
+  
+
+
+const handleVerifyToken = async () => {
+  if (!secret) {
+    message.error('El secreto de verificación no está configurado.');
+    return;
+  }
+
+  setIsButtonDisabled(true);
+
+  const isValid = authenticator.verify({ token: userToken, secret: secret });
+
+  if (isValid) {
+    message.success('Verificación exitosa!');
+    setIsModalVisible(false); // Cierra el modal
+    completeTwoFA(); // Marcar la verificación de dos pasos como completada
+    localStorage.setItem('twoFACompleted', 'true');
+    
+    // Actualizar twoFAVerified en Firestore
+    const userRef = doc(firestore, 'users', userId);
+    await updateDoc(userRef, { twoFAVerified: true });
+
+    navigate('/dashboard');
+}
+
+
+  setIsButtonDisabled(false);
 };
 
 
-
-
-  return (
+return (
     <div className="container">
       <div className="googleButtonContainer">
         {isAuthenticated ? (
-          <button className="dashboardButton" onClick={() => navigate('/dashboard')}>
-            Ir a Dashboard
-          </button>
+          <button
+          className="dashboardButton"
+          onClick={() => {
+              if (isTwoFACompleted) {
+                  navigate('/dashboard');
+              } else {
+                  setIsModalVisible(true); // Muestra el modal si no ha completado la verificación de dos pasos
+              }
+          }}
+          disabled={isButtonDisabled}
+      >
+          Ir a Dashboard
+      </button>
+      
         ) : (
           <button className="googleLoginButton" onClick={handleGoogleLogin}>
-            <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google Logo" />
-            Iniciar sesion con Google
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg"
+              alt="Google Logo"
+            />
+            Iniciar sesión con Google
           </button>
         )}
       </div>
@@ -61,6 +157,23 @@ function Home() {
           Bienvenido a nuestra plataforma. ¡Conéctate y descubre todas las funcionalidades que tenemos para ti!
         </Typist>
       </div>
+      <Modal
+        title="Verificación de dos pasos"
+        visible={isModalVisible}
+        closable={false}
+        footer={[
+          <Button key="verify" type="primary" onClick={handleVerifyToken} disabled={isButtonDisabled}>
+            Verificar
+          </Button>,
+        ]}
+      >
+        <p>Ingresa el código de verificación de dos pasos:</p>
+        <Input
+          value={userToken}
+          onChange={(e) => setUserToken(e.target.value)}
+          placeholder="Ingresa el código"
+        />
+      </Modal>
     </div>
   );
 }
