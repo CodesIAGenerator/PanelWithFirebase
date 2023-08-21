@@ -2,11 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, message, Switch, Avatar, Modal } from 'antd';
 import { auth, firestore } from './firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import speakeasy from 'speakeasy';
+import { authenticator } from 'otplib';
 import QRCode from 'qrcode.react';
 import { Buffer } from 'buffer';
-import base32Decode from 'base32-decode';
-
 global.Buffer = Buffer;
 
 function Perfil() {
@@ -22,14 +20,16 @@ function Perfil() {
       const userRef = doc(firestore, 'users', auth.currentUser.uid);
       const docSnapshot = await getDoc(userRef);
       if (docSnapshot.exists()) {
-        setUserData(docSnapshot.data());
-        setTwoFAEnabled(docSnapshot.data().twoFAEnabled || false);
-        setSecret(docSnapshot.data().secret || null);
+        const userData = docSnapshot.data();
+        setUserData(userData);
+        setTwoFAEnabled(userData.twoFAEnabled || false); // Actualizar el estado basado en los datos
+        setSecret(userData.secret || null);
       }
     };
-
+  
     fetchUserData();
   }, []);
+  
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -49,47 +49,34 @@ function Perfil() {
 
   const handle2FAToggle = async (checked) => {
     if (checked) {
-      const newSecret = speakeasy.generateSecret({ name: 'TuApp' });
-      setSecret(newSecret.base32);
+      const newSecret = authenticator.generateSecret();
+      console.log(newSecret);
+      setSecret(newSecret);
       setIsModalVisible(true);
+      // Actualizar el estado y la base de datos
+      setTwoFAEnabled(true);
+      const userRef = doc(firestore, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, { twoFAEnabled: true, secret: newSecret });
     } else {
       setSecret(null);
       const userRef = doc(firestore, 'users', auth.currentUser.uid);
-      await updateDoc(userRef, { secret: null });
+      await updateDoc(userRef, { twoFAEnabled: false, secret: null });
       message.success('Verificación de dos pasos desactivada.');
       setTwoFAEnabled(false);
     }
   };
 
   const handleOk = () => {
-    const decodedSecret = base32Decode(secret, 'RFC4648').toString('ascii');
-
-    const isValid = speakeasy.totp.verify({
-        secret: decodedSecret,
-        encoding: 'ascii',
-        token: token
-    });
-
-    const expectedToken = speakeasy.totp({
-        secret: decodedSecret,
-        encoding: 'ascii'
-    });
-
-    console.log("Token ingresado:", token);
-    console.log("Token esperado:", expectedToken);
+    const isValid = authenticator.verify({ token: token, secret: secret });
 
     if (isValid) {
-        message.success('Verificación exitosa!');
-        setIsModalVisible(false);
-        setTwoFAEnabled(true);
+      message.success('Verificación exitosa!');
+      setIsModalVisible(false);
+      setTwoFAEnabled(true);
     } else {
-        message.error('El código de verificación es incorrecto. Inténtalo de nuevo.');
+      message.error('El código de verificación es incorrecto. Inténtalo de nuevo.');
     }
-};
-
-
-
-
+  };
 
   const handleCancel = () => {
     setIsModalVisible(false);
@@ -128,7 +115,7 @@ function Perfil() {
             onOk={handleOk}
             onCancel={handleCancel}
           >
-            <QRCode value={speakeasy.otpauthURL({ secret: secret, label: 'TuApp', issuer: 'TuApp' })} />
+            <QRCode value={authenticator.keyuri('TuApp', 'TuApp', secret)} />
             <p>Escanea el código QR con tu aplicación de autenticación y luego ingresa el código generado a continuación:</p>
             <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Ingresa el código" />
           </Modal>
