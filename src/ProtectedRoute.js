@@ -1,29 +1,26 @@
-import { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
-import useAuth from './useAuth';
-import { auth } from './firebase'; // Añade esta línea
+import React, {useEffect} from 'react';
+import { useNavigate } from 'react-router-dom';
+import { auth } from './firebase';
 
-function ProtectedRoute() {
-  const isAuthenticated = useAuth();
+function ProtectedRoute({ children }) {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(user => {
-      if (!user && !loading) {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (!user || localStorage.getItem('twoFACompleted') !== 'true') {
         navigate('/');
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, navigate, loading]);
+  }, [navigate]);
 
-  if (loading) {
-    return null; // O puedes mostrar un spinner o algún componente de carga.
+  // Verificar si el usuario ha completado la verificación de dos pasos
+  if (localStorage.getItem('twoFACompleted') !== 'true') {
+    return <div>Por favor, completa la verificación de dos pasos para acceder al dashboard.</div>;
   }
 
-  return <Outlet />;
+  return children;
 }
 
 export default ProtectedRoute;
