@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, provider, signInWithPopup, firestore } from './firebase';
-import { collection, setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { authenticator } from 'otplib';
 import { Button, Modal, Input, message } from 'antd';
 import Typist from 'react-typist';
@@ -16,149 +16,129 @@ function Home() {
   const [secret, setSecret] = useState('');
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const [userId, setUserId] = useState(null);
-  const { isTwoFACompleted, completeTwoFA, resetTwoFA } = useAuth();
-  const [isButtonDashbordDisabled, setIsButtonDashbordDisabled] = useState(false);
+  const [backupCodes, setBackupCodes] = useState([]);
 
-useEffect(() => {
-    if (isAuthenticated && !isTwoFACompleted) {
-      setIsModalVisible(true);
-    }
-}, [isAuthenticated, isTwoFACompleted]);
+  useEffect(() => {
+    setIsButtonDisabled(!userToken);
+  }, [userToken]);
 
-
-useEffect(() => {
-  setIsButtonDisabled(!userToken); // El botón estará desactivado si userToken está vacío
-}, [userToken]);
-
-
-
-const getUserSecret = async (userId) => {
+  const getUserSecret = async (userId) => {
     try {
+      const userRef = doc(firestore, 'users', userId);
+      const docSnapshot = await getDoc(userRef);
+      if (docSnapshot.exists()) {
+        setSecret(docSnapshot.data().secret);
+      } else {
+        console.log("No se encontró el documento del usuario.");
+      }
+    } catch (error) {
+      console.error("Error al obtener el secreto del usuario:", error);
+    }
+  }
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      setIsAuthenticated(!!user);
+      if (user) {
+        setUserId(user.uid);
+        await getUserSecret(user.uid);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (userId) {
         const userRef = doc(firestore, 'users', userId);
         const docSnapshot = await getDoc(userRef);
         if (docSnapshot.exists()) {
-            console.log("Secret del usuario:", docSnapshot.data().secret);
-            setSecret(docSnapshot.data().secret); // Almacenar en 'secret'
-            
-            // Comprobar el valor de twoFAVerified
-            if (docSnapshot.data().twoFAVerified) {
-                completeTwoFA();
-                setIsModalVisible(false);
-            }
-        } else {
-            console.log("No se encontró el documento del usuario.");
+          const data = docSnapshot.data();
+          if (!("twoFAVerified" in data) || data.twoFAVerified === true) {
+            setIsModalVisible(false);
+          } else if (data.twoFAVerified === false) {
+            setIsModalVisible(true);
+          }
         }
-    } catch (error) {
-        console.error("Error al obtener el secreto del usuario:", error);
-    }
-}
-
-
-useEffect(() => {
-  const unsubscribe = auth.onAuthStateChanged((user) => {
-    setIsAuthenticated(!!user);
-    if (user) {
-      setUserId(user.uid);
-      if (!isTwoFACompleted) {
-        getUserSecret(user.uid);
       }
-    }
-  });
+    };
 
-  return () => unsubscribe();
-}, [isTwoFACompleted]);
+    fetchUserData();
+  }, [userId]);
 
+  useEffect(() => {
+    const fetchBackupCodes = async () => {
+      if (userId) {
+        const userRef = doc(firestore, 'users', userId);
+        const docSnapshot = await getDoc(userRef);
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          setBackupCodes(data.backupCodes || []);
+        }
+      }
+    };
 
-const handleGoogleLogin = async () => {
+    fetchBackupCodes();
+  }, [userId]);
+
+  const handleGoogleLogin = async () => {
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user) {
         const userRef = doc(firestore, 'users', result.user.uid);
-  
-        // Asegúrate de que el secreto se establezca aquí si es la primera vez que el usuario inicia sesión
         await setDoc(
           userRef,
           {
             email: result.user.email,
             role: 'user',
-            // secret: 'TU_SECRETO_GENERADO'  // Descomenta y establece el secreto aquí si es necesario
           },
           { merge: true }
         );
-  
         setUserId(result.user.uid);
-        // Llama a getUserSecret después de crear/actualizar el documento del usuario
-        getUserSecret(result.user.uid);
+        await getUserSecret(result.user.uid);
       }
     } catch (error) {
       console.error('Error al iniciar sesión o crear el usuario:', error);
     }
-};
+  };
 
+  const handleVerifyToken = async () => {
+    if (!secret) {
+      message.error('El secreto de verificación no está configurado.');
+      return;
+    }
 
+    setIsButtonDisabled(true);
+    const isValid = authenticator.verify({ token: userToken, secret: secret });
 
-const enableButtonDashboard = async (userId) => {
-  const userRef = doc(firestore, 'users', userId);
-  const docSnapshop = await getDoc(userRef);
+    if (isValid || backupCodes.includes(userToken)) {
+      message.success('Verificación exitosa!');
+      setIsModalVisible(false);
+      const userRef = doc(firestore, 'users', userId);
+      await updateDoc(userRef, { twoFAVerified: true });
+      if (backupCodes.includes(userToken)) {
+        const updatedBackupCodes = backupCodes.filter(code => code !== userToken);
+        await updateDoc(userRef, { backupCodes: updatedBackupCodes });
+      }
+      navigate('/dashboard');
+    } else {
+      message.error("Error al introducir el código de dos pasos.");
+    }
 
-  if (docSnapshop.data().twoFAVerified) {
-    setIsButtonDashbordDisabled(false);
-  } else {
-    setIsButtonDashbordDisabled(true);
-    message.info('Debes pasar la verificación de dos pasos ');
-  }
-}
+    setIsButtonDisabled(false);
+  };
 
-
-const handleVerifyToken = async () => {
-  if (!secret) {
-    message.error('El secreto de verificación no está configurado.');
-    return;
-  }
-
-  setIsButtonDisabled(true);
-
-  const isValid = authenticator.verify({ token: userToken, secret: secret });
-
-  if (isValid) {
-    message.success('Verificación exitosa!');
-    setIsModalVisible(false); // Cierra el modal
-    completeTwoFA(); // Marcar la verificación de dos pasos como completada
-    localStorage.setItem('twoFACompleted', 'true');
-    
-    // Actualizar twoFAVerified en Firestore
-    const userRef = doc(firestore, 'users', userId);
-    await updateDoc(userRef, { twoFAVerified: true });
-
-    navigate('/dashboard');
-} else {
-  message.error("Error al introducir el codigo de dos pasos.");
-}
-
-
-  setIsButtonDisabled(false);
-};
-
-
-
-useEffect(() => {
-  if (userId) {
-    enableButtonDashboard(userId);
-  }
-}, [userId])
-
-return (
+  return (
     <div className="container">
       <div className="googleButtonContainer">
         {isAuthenticated ? (
           <button
-          className="dashboardButton"
-          disabled={isButtonDashbordDisabled}
-          onClick={() => navigate('/dashboard')}
-      >
-          Ir a Dashboard
-      </button>
-      
+            className="dashboardButton"
+            onClick={() => navigate('/dashboard')}
+          >
+            Ir a Dashboard
+          </button>
         ) : (
           <button className="googleLoginButton" onClick={handleGoogleLogin}>
             <img
