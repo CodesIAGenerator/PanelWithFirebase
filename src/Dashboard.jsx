@@ -84,8 +84,18 @@ const handleLogout = async () => {
   if (userId) {
     await auth.signOut();
     const userRef = doc(firestore, 'users', userId);
-    await updateDoc(userRef, { twoFAVerified: false });
-    localStorage.setItem('twoFACompleted', 'false');
+    const docSnapshot = await getDoc(userRef);
+    
+    if(docSnapshot.exists()) {
+      const data = docSnapshot.data();
+      // Si tiene la verificacion activada al cerrar sesion ponemos en false la verificacion completada
+      if ("twoFAEnabled" in data) {
+        await updateDoc(userRef, { twoFAVerified: false });
+        //localStorage.setItem('twoFACompleted', 'false');
+      }
+    }
+
+    
   }
 };
 
@@ -105,6 +115,9 @@ const handleLogout = async () => {
             </div>;
     }
 };
+
+
+
 
 
 
