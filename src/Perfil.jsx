@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Switch, Avatar, Modal } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { DownloadOutlined, CopyTwoTone, UploadOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, message, Switch, Avatar, Modal, Upload } from 'antd';
 import { auth, firestore } from './firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode.react';
 import { Buffer } from 'buffer';
@@ -16,6 +18,38 @@ function Perfil() {
   const [backupModalVisible, setBackupModalVisible] = useState(false);
   const [token, setToken] = useState("");
   const [backupCodes, setBackupCodes] = useState([]);
+  const [profileImageUrl, setProfileImageUrl] = useState(null);
+  const fileInputRef = useRef(null);
+  const [url, setUrl] = useState('');
+  const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
+  const [imageGoogle, setImageGoogle] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setImageGoogle(user.photoURL);
+      }
+    });
+  
+    return () => unsubscribe();
+  }, []);
+
+  const handleImageUpload = async (file) => {
+    if (file) {
+      const storage = getStorage();
+      const storageRef = ref(storage, 'profile-images/' + auth.currentUser.uid);
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      setProfileImageUrl(url);
+
+      // Actualizar la URL de la imagen en Firestore
+      const userRef = doc(firestore, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, { photoURL: url });
+      message.success('Imagen de perfil actualizada con éxito!');
+    }
+
+    setEditProfileModalVisible(false);
+  };
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -27,14 +61,22 @@ function Perfil() {
         setTwoFAEnabled(userData.twoFAEnabled || false);
         setSecret(userData.secret || null);
         setBackupCodes(userData.backupCodes || []);
-      }
+      }      
     };
   
     fetchUserData();
   }, []);
 
+  useEffect(() => {
+    console.log(auth.currentUser.displayName);
+  }, [twoFAEnabled]);
+
   const handleEdit = () => {
     setIsEditing(true);
+  };
+
+  const handleEditProfileImageClick = () => {
+    setEditProfileModalVisible(true);
   };
 
   const handleSave = async (values) => {
@@ -111,6 +153,22 @@ function Perfil() {
     setIsModalVisible(false);
   };
 
+  const getImageFromFireStorage = async() => {
+    const userRef = doc(firestore, 'users', auth.currentUser.uid);
+    const docSnapshot = await getDoc(userRef);
+
+    setUrl(docSnapshot.data().photoURL);
+  }
+
+  getImageFromFireStorage();
+
+  const uploadButton = (
+    <div>
+      <UploadOutlined />
+      <div style={{ marginTop: 8 }}>Subir</div>
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
       <Card title="Perfil de Usuario" style={{ width: 400 }}>
@@ -128,6 +186,12 @@ function Perfil() {
           </Form>
         ) : (
           <>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <Avatar size={60} src={url || imageGoogle} />             
+              <Button type='dashed' onClick={handleEditProfileImageClick} style={{ marginTop: 10}}>              
+                Editar foto
+              </Button>
+            </div>
             <p><strong>Nombre:</strong> {userData.name}</p>
             <p><strong>Email:</strong> {userData.email}</p>
             <Button onClick={handleEdit}>Editar</Button>
@@ -157,10 +221,23 @@ function Perfil() {
             onCancel={() => setBackupModalVisible(false)}
           >
             <pre>{backupCodes.join('\n')}</pre>
-            <Button onClick={handleCopyToClipboard}>Copiar al portapapeles</Button>
-            <Button onClick={handleDownload}>Descargar</Button>
+            <DownloadOutlined onClick={handleDownload} style={{ marginRight: '10px' }} />
+            <CopyTwoTone onClick={handleCopyToClipboard} />
           </Modal>
         )}
+        <Modal
+          title="Editar foto de perfil"
+          visible={editProfileModalVisible}
+          onCancel={() => setEditProfileModalVisible(false)}
+          footer={null}
+        >
+          <Upload
+            showUploadList={false}
+            customRequest={({ file }) => handleImageUpload(file)}
+          >
+            {url ? <img src={url} alt="avatar" style={{ width: '100%' }} /> : uploadButton}
+          </Upload>
+        </Modal>
       </Card>
     </div>
   );
