@@ -1,17 +1,18 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './Home';
-import Dashboard from './Dashboard';
-import ProtectedRoute from './ProtectedRoute';
+import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
+import ProtectedRoute from './routes/ProtectedRoute';
+import { AuthProvider } from './hooks/auth-context'; // Asegúrate de importar AuthProvider
 
 function App() {
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/dashboard" element={<ProtectedRoute />}>
-          <Route index element={<Dashboard />} />
-        </Route>
-      </Routes>
+      <AuthProvider> {/* Envuelve tu aplicación con AuthProvider */}
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        </Routes>
+      </AuthProvider>
     </Router>
   );
 }
