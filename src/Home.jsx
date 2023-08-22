@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, provider, signInWithPopup, firestore } from './firebase';
+import { auth, provider, firestore } from './firebase';
 import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { authenticator } from 'otplib';
 import { Button, Modal, Input, message } from 'antd';
 import Typist from 'react-typist';
 import './Home.css';
-import { useAuth } from './auth-context';
+import { signInWithRedirect } from 'firebase/auth';
 
 function Home() {
   const navigate = useNavigate();
@@ -84,7 +84,7 @@ function Home() {
 
   const handleGoogleLogin = async () => {
     try {
-      const result = await signInWithPopup(auth, provider);
+      const result = await signInWithRedirect(auth, provider);
       if (result.user) {
         const userRef = doc(firestore, 'users', result.user.uid);
         await setDoc(
