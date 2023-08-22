@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DownloadOutlined, CopyTwoTone, UploadOutlined } from '@ant-design/icons';
 import { Card, Form, Input, Button, message, Switch, Avatar, Modal, Upload } from 'antd';
 import { auth, firestore } from '../firebase/firebase';
@@ -104,7 +104,7 @@ function Perfil() {
 
       const userRef = doc(firestore, 'users', auth.currentUser.uid);
       await updateDoc(userRef, { secret: newSecret });
-      
+
       setIsModalVisible(true);
       console.log(newSecret);
     } else {
