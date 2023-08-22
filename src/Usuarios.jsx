@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { firestore } from './firebase';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { List, Button, Card, Avatar, Modal, Typography } from 'antd';
+import { firestore, auth } from './firebase';
+import { collection, getDocs, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+import { List, Button, Card, Avatar, Modal, Typography, Form, Input, Switch } from 'antd';
 
 const { Title } = Typography;
 
 function Usuarios() {
   const [users, setUsers] = useState([]);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [nameGoogle, setNameGoogle] = useState(null);
+  const [isTwoFAEnabled, setIsTwoFAEnabled] = useState(false);
+
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -17,6 +22,16 @@ function Usuarios() {
     };
 
     fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setNameGoogle(user.displayName);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleDeleteUser = async (userId) => {
@@ -30,6 +45,56 @@ function Usuarios() {
     });
   };
 
+  const handle2FAToggle = async (checked) => {
+    setIsTwoFAEnabled(checked); // Actualiza el estado del switch
+  
+    // Actualiza los datos en Firestore
+    const userRef = doc(firestore, 'users', selectedUser.id);
+    
+    
+  };
+
+  const handleCardClick = async (userId) => {
+    const userRef = doc(firestore, 'users', userId);
+    const docSnapshot = await getDoc(userRef);
+    const userData = docSnapshot.data();
+    setSelectedUser({ id: userId, ...userData });
+    setIsModalVisible(true);
+  
+    if (docSnapshot.exists()) {
+      const data = docSnapshot.data();
+      setIsTwoFAEnabled(true);
+      
+    }
+  };
+
+  const handleSave = async (values) => {
+    const userRef = doc(firestore, 'users', selectedUser.id);
+  
+    // Preparar los valores para actualizar en Firestore
+    const updateValues = { ...values };
+    if (!values.twoFAEnabled) {
+      updateValues.twoFAEnabled = false;
+      updateValues.twoFAVerified = null;
+      updateValues.secret = null;
+    }
+  
+    // Verificar que todos los campos estén definidos
+    Object.keys(updateValues).forEach(key => {
+      if (updateValues[key] === undefined) {
+        delete updateValues[key]; // Eliminar cualquier campo que sea undefined
+      }
+    });
+  
+    // Actualizar los valores en Firestore
+    await setDoc(userRef, updateValues, { merge: true });
+  
+    setIsModalVisible(false);
+    setUsers(prevUsers => prevUsers.map(user => (user.id === selectedUser.id ? { ...user, ...updateValues } : user)));
+  };
+  
+  
+
   return (
     <div>
       <Title level={2}>Lista de Usuarios</Title>
@@ -38,7 +103,8 @@ function Usuarios() {
         dataSource={users}
         renderItem={user => (
           <List.Item>
-            <Card
+            <Card hoverable
+              onClick={() => handleCardClick(user.id)}
               actions={[
                 <Button type="danger" onClick={() => handleDeleteUser(user.id)}>
                   Borrar
@@ -46,16 +112,50 @@ function Usuarios() {
               ]}
             >
               <Card.Meta
-                avatar={<Avatar src={user.photoURL} />}
-                title={user.email}
-                description={`Rol: ${user.role}`}
+                avatar={user.photoURL ? <Avatar src={user.photoURL} /> : null}
+                title={<strong>{user.name || nameGoogle}</strong>}
+                description={`Rol: ${user.role}\n${user.email}`}
               />
             </Card>
           </List.Item>
         )}
       />
+      {selectedUser && (
+        <Modal
+          title="Editar Usuario"
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          footer={null}
+        >
+          <Form
+            onFinish={handleSave}
+            initialValues={{
+              ...selectedUser,
+              twoFAEnabled: selectedUser.twoFAEnabled || false, // Utiliza el valor de twoFAEnabled como valor inicial
+            }}
+          >
+            <Form.Item name="name" label="Nombre">
+              <Input />
+            </Form.Item>
+            <Form.Item name="email" label="Email">
+              <Input />
+            </Form.Item>
+            <Form.Item name="photoURL" label="URL de la foto">
+              <Input />
+            </Form.Item>
+            <Form.Item name="twoFAEnabled" label="Verificación de dos pasos" valuePropName="checked">
+              <Switch onChange={handle2FAToggle} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">Guardar</Button>
+            </Form.Item>
+          </Form>
+        </Modal>
+      )}
     </div>
   );
+  
+  
 }
 
 export default Usuarios;
