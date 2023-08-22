@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './Home';
-import Dashboard from './Dashboard';
-import ProtectedRoute from './ProtectedRoute';
-import { AuthProvider } from './auth-context'; // Asegúrate de importar AuthProvider
+import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
+import ProtectedRoute from './routes/ProtectedRoute';
+import { AuthProvider } from './hooks/auth-context'; // Asegúrate de importar AuthProvider
 
 function App() {
   return (
