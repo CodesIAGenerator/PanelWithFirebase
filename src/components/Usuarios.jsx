@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { firestore, auth } from '../firebase/firebase';
+import { firestore } from '../firebase/firebase';
 import { collection, getDocs, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
-import { List, Button, Card, Avatar, Modal, Typography, Form, Input, Switch } from 'antd';
+import { List, Button, Card, Avatar, Modal, Typography, Form, Input, Switch, Select } from 'antd';
 
 const { Title } = Typography;
+const { Option } = Select;
 
-function Usuarios() {
+function Usuarios({ darkMode }) {
   const [users, setUsers] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [nameGoogle, setNameGoogle] = useState(null);
 
-
+  const darkModeStyles = {
+    backgroundColor: darkMode ? '#121212' : '#f4f4f4',
+    color: darkMode ? '#E0E0E0' : '#333'
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -22,16 +26,6 @@ function Usuarios() {
     };
 
     fetchUsers();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        setNameGoogle(user.displayName);
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   const handleDeleteUser = async (userId) => {
@@ -45,7 +39,6 @@ function Usuarios() {
     });
   };
 
- 
   const handleCardClick = async (userId) => {
     const userRef = doc(firestore, 'users', userId);
     const docSnapshot = await getDoc(userRef);
@@ -56,34 +49,14 @@ function Usuarios() {
 
   const handleSave = async (values) => {
     const userRef = doc(firestore, 'users', selectedUser.id);
-  
-    // Preparar los valores para actualizar en Firestore
-    const updateValues = { ...values };
-    if (!values.twoFAEnabled) {
-      updateValues.twoFAEnabled = false;
-      updateValues.twoFAVerified = null;
-      updateValues.secret = null;
-    }
-  
-    // Verificar que todos los campos estén definidos
-    Object.keys(updateValues).forEach(key => {
-      if (updateValues[key] === undefined) {
-        delete updateValues[key]; // Eliminar cualquier campo que sea undefined
-      }
-    });
-  
-    // Actualizar los valores en Firestore
-    await setDoc(userRef, updateValues, { merge: true });
-  
+    await setDoc(userRef, values, { merge: true });
     setIsModalVisible(false);
-    setUsers(prevUsers => prevUsers.map(user => (user.id === selectedUser.id ? { ...user, ...updateValues } : user)));
+    setUsers(prevUsers => prevUsers.map(user => (user.id === selectedUser.id ? { ...user, ...values } : user)));
   };
-  
-  
 
   return (
-    <div>
-      <Title level={2}>Lista de Usuarios</Title>
+    <div style={{ ...darkModeStyles, padding: '20px' }}>
+      <Title style={darkModeStyles} level={2}>Lista de Usuarios</Title>
       <List
         grid={{ gutter: 16, column: 4 }}
         dataSource={users}
@@ -92,7 +65,14 @@ function Usuarios() {
             <Card hoverable
               onClick={() => handleCardClick(user.id)}
               actions={[
-                <Button type="danger" onClick={() => handleDeleteUser(user.id)}>
+                <Button style={{border: 'none', padding: '0 12px'}} onClick={(e) => {e.stopPropagation(); handleCardClick(user.id);}}>
+                  Editar
+                </Button>,
+                <Button 
+                type="danger" 
+                onClick={(e) => {e.stopPropagation(); handleDeleteUser(user.id);}}
+                style={{padding: '0 12px'}}
+                >
                   Borrar
                 </Button>
               ]}
@@ -115,10 +95,7 @@ function Usuarios() {
         >
           <Form
             onFinish={handleSave}
-            initialValues={{
-              ...selectedUser,
-              twoFAEnabled: selectedUser.twoFAEnabled || false, // Utiliza el valor de twoFAEnabled como valor inicial
-            }}
+            initialValues={selectedUser}
           >
             <Form.Item name="name" label="Nombre">
               <Input />
@@ -128,6 +105,14 @@ function Usuarios() {
             </Form.Item>
             <Form.Item name="photoURL" label="URL de la foto">
               <Input />
+            </Form.Item>
+            <Form.Item name="role" label="Rol">
+              <Select>
+                <Option value="Admin">Admin</Option>
+                <Option value="Manager">Manager</Option>
+                <Option value="Developer">Developer</Option>
+                <Option value="Client">Client</Option>
+              </Select>
             </Form.Item>
             <Form.Item name="twoFAEnabled" label="Verificación de dos pasos" valuePropName="checked">
               <Switch />
@@ -140,8 +125,6 @@ function Usuarios() {
       )}
     </div>
   );
-  
-  
 }
 
 export default Usuarios;
